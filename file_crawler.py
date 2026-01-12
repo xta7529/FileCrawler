@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 class FileCrawler:
     """Main class for crawling websites and downloading files matching keywords."""
     
-    def __init__(self, base_url: str, keywords: List[str], output_dir: str = "downloaded_files"):
+    def __init__(self, base_url: str, keywords: List[str], output_dir: str = "downloaded_files", max_depth: int = 2):
         """
         Initialize the file crawler.
         
@@ -42,13 +42,17 @@ class FileCrawler:
             base_url: The website URL to scrape
             keywords: List of keywords to search for
             output_dir: Directory to save downloaded files
+            max_depth: Maximum crawling depth (default: 2)
         """
         self.base_url = base_url
         self.keywords = [kw.strip().lower() for kw in keywords]
         self.output_dir = output_dir
+        self.max_depth = max_depth
         self.visited_urls: Set[str] = set()
         self.downloaded_files: List[str] = []
         self.base_domain = urlparse(base_url).netloc
+        self.tesseract_checked = False
+        self.tesseract_available = False
         
         # Create output directory
         Path(self.output_dir).mkdir(parents=True, exist_ok=True)
@@ -56,22 +60,15 @@ class FileCrawler:
         # Supported file extensions
         self.file_extensions = {'.pdf', '.docx', '.doc', '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff'}
         
+        # Prepare valid domains list for easier checking
+        self.valid_domains = {self.base_domain}
+        if self.base_domain.startswith('www.'):
+            self.valid_domains.add(self.base_domain[4:])
+        else:
+            self.valid_domains.add(f"www.{self.base_domain}")
+        
         logger.info(f"Initialized FileCrawler for {base_url}")
         logger.info(f"Keywords: {', '.join(self.keywords)}")
-    
-    def get_user_input(self) -> Tuple[str, List[str]]:
-        """
-        Prompt user for URL and keywords.
-        
-        Returns:
-            Tuple of (url, list of keywords)
-        """
-        print("\n=== File Crawler ===")
-        url = input("Enter the URL of the website to scrape: ").strip()
-        keywords_input = input("Enter the keywords to search for (comma-separated): ").strip()
-        keywords = [kw.strip() for kw in keywords_input.split(',') if kw.strip()]
-        
-        return url, keywords
     
     def is_valid_url(self, url: str) -> bool:
         """Check if URL is valid and belongs to the same domain."""
@@ -81,7 +78,7 @@ class FileCrawler:
             if not parsed.scheme or not parsed.netloc:
                 return False
             # Only follow links within the same domain
-            return parsed.netloc == self.base_domain or parsed.netloc == f"www.{self.base_domain}" or f"www.{parsed.netloc}" == self.base_domain
+            return parsed.netloc in self.valid_domains
         except Exception:
             return False
     
@@ -197,6 +194,20 @@ class FileCrawler:
         """
         text = ""
         try:
+            # Check tesseract availability on first use
+            if not self.tesseract_checked:
+                self.tesseract_checked = True
+                try:
+                    pytesseract.get_tesseract_version()
+                    self.tesseract_available = True
+                except Exception:
+                    logger.warning("Tesseract OCR not found. Image text extraction will be skipped.")
+                    logger.warning("Install tesseract: sudo apt-get install tesseract-ocr (Linux) or brew install tesseract (Mac)")
+                    self.tesseract_available = False
+            
+            if not self.tesseract_available:
+                return text
+            
             image = Image.open(io.BytesIO(content))
             text = pytesseract.image_to_string(image)
         except Exception as e:
@@ -367,7 +378,7 @@ class FileCrawler:
         logger.info("Starting file crawler...")
         
         try:
-            self.crawl_page(self.base_url, depth=2)
+            self.crawl_page(self.base_url, depth=self.max_depth)
             
             # Print summary
             print("\n=== Crawling Complete ===")
@@ -407,13 +418,6 @@ def main():
         sys.exit(1)
     
     keywords = [kw.strip() for kw in keywords_input.split(',') if kw.strip()]
-    
-    # Check for tesseract
-    try:
-        pytesseract.get_tesseract_version()
-    except Exception:
-        logger.warning("Tesseract OCR not found. Image text extraction will not work.")
-        logger.warning("Install tesseract: sudo apt-get install tesseract-ocr (Linux) or brew install tesseract (Mac)")
     
     # Create crawler and start
     crawler = FileCrawler(url, keywords)
