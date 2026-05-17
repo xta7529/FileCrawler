@@ -68,7 +68,10 @@ class FileCrawler:
             self.valid_domains.add(f"www.{self.base_domain}")
         
         logger.info(f"Initialized FileCrawler for {base_url}")
-        logger.info(f"Keywords: {', '.join(self.keywords)}")
+        if self.keywords:
+            logger.info(f"Keywords: {', '.join(self.keywords)}")
+        else:
+            logger.info("No keywords specified — all files will be downloaded")
     
     def is_valid_url(self, url: str) -> bool:
         """Check if URL is valid and belongs to the same domain."""
@@ -241,13 +244,16 @@ class FileCrawler:
     def contains_keywords(self, text: str) -> bool:
         """
         Check if text contains any of the keywords.
+        Returns True unconditionally when no keywords are specified (download all files).
         
         Args:
             text: Text to search
             
         Returns:
-            True if any keyword is found
+            True if any keyword is found, or if no keywords were specified
         """
+        if not self.keywords:
+            return True
         text_lower = text.lower()
         return any(keyword in text_lower for keyword in self.keywords)
     
@@ -312,9 +318,12 @@ class FileCrawler:
         # Extract text
         text = self.extract_text(content, file_ext)
         
-        # Check for keywords
+        # Check for keywords (or download unconditionally when no keywords set)
         if self.contains_keywords(text):
-            logger.info(f"Keywords found in {url}")
+            if self.keywords:
+                logger.info(f"Keywords found in {url}")
+            else:
+                logger.info(f"Downloading file: {url}")
             filepath = self.save_file(content, url, file_ext)
             if filepath:
                 self.downloaded_files.append(filepath)
@@ -390,7 +399,7 @@ class FileCrawler:
                 for filepath in self.downloaded_files:
                     print(f"  - {filepath}")
             else:
-                print("\nNo files matching the keywords were found.")
+                print("\nNo files were found on the site.")
         
         except KeyboardInterrupt:
             logger.info("\nCrawling interrupted by user")
@@ -413,11 +422,10 @@ def main():
         print("Error: URL is required")
         sys.exit(1)
     
-    if not keywords_input:
-        print("Error: At least one keyword is required")
-        sys.exit(1)
-    
     keywords = [kw.strip() for kw in keywords_input.split(',') if kw.strip()]
+    
+    if not keywords:
+        print("No keywords entered — all files on the site will be downloaded.")
     
     # Create crawler and start
     crawler = FileCrawler(url, keywords)
